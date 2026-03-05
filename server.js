@@ -4,28 +4,23 @@ app.use(express.json());
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function parseTimeWindow(window) {
-  const now = new Date();
-  const day = now.getDay(); // 0 = Sunday
-
-  // Default: next 3 days starting tomorrow
-  const start = new Date(now);
-  start.setDate(now.getDate() + 1);
-  start.setHours(9, 0, 0, 0);
-
-  const end = new Date(start);
-  end.setDate(start.getDate() + 3);
-  end.setHours(18, 0, 0, 0);
-
-  return { start, end };
+function extractArgs(body) {
+  try {
+    const toolCall = body?.message?.toolCallList?.[0];
+    if (toolCall) {
+      const args = toolCall.function?.arguments;
+      return typeof args === "string" ? JSON.parse(args) : args;
+    }
+    return body;
+  } catch (e) {
+    return body;
+  }
 }
 
 function generateSlots(durationMinutes) {
   const now = new Date();
-
-  // Generate realistic slots across the next 2 days
   const slots = [];
-  const startHours = [10, 13, 15, 16]; // 10am, 1pm, 3pm, 4pm
+  const startHours = [10, 13, 15, 16];
 
   for (let dayOffset = 1; dayOffset <= 2; dayOffset++) {
     for (const hour of startHours) {
@@ -33,7 +28,6 @@ function generateSlots(durationMinutes) {
       slotStart.setDate(now.getDate() + dayOffset);
       slotStart.setHours(hour, 0, 0, 0);
 
-      // Must be at least 2 hours from now
       const minStart = new Date(now.getTime() + 2 * 60 * 60 * 1000);
       if (slotStart < minStart) continue;
 
@@ -54,7 +48,7 @@ function generateSlots(durationMinutes) {
 }
 
 function formatSlotDisplay(date) {
-  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
   const dayName = days[date.getDay()];
@@ -74,16 +68,18 @@ function formatSlotDisplay(date) {
 
 app.post("/vapi/check-availability", (req, res) => {
   console.log("\n📅 check_availability called");
-  console.log("Body:", JSON.stringify(req.body, null, 2));
+  console.log("Raw body:", JSON.stringify(req.body, null, 2));
 
-  const { preferred_time_window, duration_minutes } = req.body;
+  const args = extractArgs(req.body);
+  console.log("Extracted args:", JSON.stringify(args, null, 2));
+
+  const { duration_minutes } = args;
 
   if (!duration_minutes) {
     return res.status(400).json({ error: "duration_minutes is required" });
   }
 
   const slots = generateSlots(duration_minutes);
-
   console.log("Returning slots:", slots);
 
   return res.json({
@@ -97,22 +93,15 @@ app.post("/vapi/check-availability", (req, res) => {
 
 app.post("/vapi/create-calendar-event", (req, res) => {
   console.log("\n📆 create_calendar_event called");
-  console.log("Body:", JSON.stringify(req.body, null, 2));
+  console.log("Raw body:", JSON.stringify(req.body, null, 2));
 
-  const {
-    full_name,
-    phone_number,
-    service_name,
-    duration_minutes,
-    start_time,
-    end_time,
-  } = req.body;
+  const args = extractArgs(req.body);
+  const { full_name, phone_number, service_name, duration_minutes, start_time, end_time } = args;
 
   if (!full_name || !service_name || !start_time) {
     return res.status(400).json({ error: "full_name, service_name, and start_time are required" });
   }
 
-  // Log the booking (in production this writes to Google Calendar)
   const booking = {
     id: `MINDFLOW-${Date.now()}`,
     status: "confirmed",
@@ -141,16 +130,16 @@ app.post("/vapi/create-calendar-event", (req, res) => {
 
 app.post("/vapi/send-confirmation-sms", (req, res) => {
   console.log("\n📲 send_confirmation_sms called");
-  console.log("Body:", JSON.stringify(req.body, null, 2));
+  console.log("Raw body:", JSON.stringify(req.body, null, 2));
 
-  const { full_name, phone_number, service_name, appointment_time } = req.body;
+  const args = extractArgs(req.body);
+  const { full_name, phone_number, service_name, appointment_time } = args;
 
   if (!full_name || !phone_number) {
     return res.status(400).json({ error: "full_name and phone_number are required" });
   }
 
-  // SMS template (logged here — replace with Twilio in production)
-  const smsMessage = 
+  const smsMessage =
 `Hi ${full_name} ✨
 
 You're confirmed for your ${service_name} at Mindflow Spa on ${appointment_time}.
