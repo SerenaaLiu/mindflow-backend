@@ -4,31 +4,32 @@ app.use(express.json());
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function extractArgs(body) {
-  try {
-    // Format 1: body.message.toolCallList[0].function.arguments
-    const toolCall = body?.message?.toolCallList?.[0];
-    if (toolCall) {
-      const args = toolCall.function?.arguments;
-      return typeof args === "string" ? JSON.parse(args) : args;
-    }
-    // Format 2: body.message.toolCalls[0].function.arguments
-    const toolCall2 = body?.message?.toolCalls?.[0];
-    if (toolCall2) {
-      const args = toolCall2.function?.arguments;
-      return typeof args === "string" ? JSON.parse(args) : args;
-    }
-    // Format 3: body.toolCalls[0].function.arguments (top-level)
-    const toolCall3 = body?.toolCalls?.[0];
-    if (toolCall3) {
-      const args = toolCall3.function?.arguments;
-      return typeof args === "string" ? JSON.parse(args) : args;
-    }
-    // Format 4: direct body
-    return body;
-  } catch (e) {
-    return body;
+function extractToolCall(body) {
+  return body?.message?.toolCallList?.[0]
+    || body?.message?.toolCalls?.[0]
+    || body?.toolCalls?.[0]
+    || null;
+}
+
+function extractArgs(toolCall, body) {
+  if (toolCall) {
+    const args = toolCall.function?.arguments;
+    return typeof args === "string" ? JSON.parse(args) : (args || {});
   }
+  return body || {};
+}
+
+function getToolCallId(toolCall) {
+  return toolCall?.id || toolCall?.toolCallId || null;
+}
+
+function vapiResponse(res, toolCallId, resultObj) {
+  const resultStr = typeof resultObj === "string" ? resultObj : JSON.stringify(resultObj);
+  if (toolCallId) {
+    return res.json({ results: [{ toolCallId, result: resultStr }] });
+  }
+  // Fallback for direct testing without toolCallId
+  return res.json(resultObj);
 }
 
 function generateSlots(durationMinutes) {
@@ -64,66 +65,57 @@ function generateSlots(durationMinutes) {
 function formatSlotDisplay(date) {
   const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
   const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
   const dayName = days[date.getDay()];
   const month = months[date.getMonth()];
   const dayNum = date.getDate();
-
   let hours = date.getHours();
   const minutes = date.getMinutes();
   const ampm = hours >= 12 ? "PM" : "AM";
   hours = hours % 12 || 12;
   const minStr = minutes === 0 ? "" : `:${String(minutes).padStart(2, "0")}`;
-
   return `${dayName}, ${month} ${dayNum} at ${hours}${minStr} ${ampm}`;
 }
 
 // ─── Route 1: check_availability ────────────────────────────────────────────
 
 app.post("/vapi/check-availability", (req, res) => {
-  const args = extractArgs(req.body);
-  const duration_minutes = args?.duration_minutes || args?.durationMinutes || 60;
-  console.log("check_availability | duration:", duration_minutes, "| args:", JSON.stringify(args));
+  const toolCall = extractToolCall(req.body);
+  const args = extractArgs(toolCall, req.body);
+  const toolCallId = getToolCallId(toolCall);
+  const duration_minutes = Number(args?.duration_minutes || args?.durationMinutes || 60);
 
-  const slots = generateSlots(Number(duration_minutes));
+  console.log("check_availability | duration:", duration_minutes, "| toolCallId:", toolCallId);
 
-  return res.json({
+  const slots = generateSlots(duration_minutes);
+  const result = {
     available_slots: slots,
     timezone: "America/New_York",
-    duration_minutes: Number(duration_minutes),
-  });
+    duration_minutes,
+  };
+
+  return vapiResponse(res, toolCallId, result);
 });
 
 // ─── Route 2: create_calendar_event ─────────────────────────────────────────
 
 app.post("/vapi/create-calendar-event", (req, res) => {
-  const args = extractArgs(req.body);
-  const { full_name, phone_number, service_name, duration_minutes, start_time, end_time } = args || {};
+  const toolCall = extractToolCall(req.body);
+  const args = extractArgs(toolCall, req.body);
+  const toolCallId = getToolCallId(toolCall);
+  const { full_name, phone_number, service_name, duration_minutes, start_time, end_time } = args;
+
   console.log("create_calendar_event | client:", full_name, "| service:", service_name, "| start:", start_time);
 
   if (!full_name || !service_name || !start_time) {
-    console.log("MISSING required fields. Args:", JSON.stringify(args));
-    return res.status(400).json({ error: "full_name, service_name, and start_time are required" });
+    return vapiResponse(res, toolCallId, "Missing required fields: full_name, service_name, start_time");
   }
 
-  const booking = {
-    id: `MINDFLOW-${Date.now()}`,
-    status: "confirmed",
-    client: full_name,
-    phone: phone_number,
-    service: service_name,
-    duration: duration_minutes,
-    start: start_time,
-    end: end_time,
-    booked_at: new Date().toISOString(),
-    booked_via: "Elina (Voice Assistant)",
-  };
+  const bookingId = `MINDFLOW-${Date.now()}`;
+  console.log("BOOKING CONFIRMED:", bookingId, full_name, service_name, start_time);
 
-  console.log("BOOKING CONFIRMED:", JSON.stringify(booking));
-
-  return res.json({
+  return vapiResponse(res, toolCallId, {
     success: true,
-    booking_id: booking.id,
+    booking_id: bookingId,
     status: "confirmed",
     message: `Appointment confirmed for ${full_name}`,
   });
@@ -132,28 +124,22 @@ app.post("/vapi/create-calendar-event", (req, res) => {
 // ─── Route 3: send_confirmation_sms ─────────────────────────────────────────
 
 app.post("/vapi/send-confirmation-sms", (req, res) => {
-  const args = extractArgs(req.body);
-  const { full_name, phone_number, service_name, appointment_time } = args || {};
+  const toolCall = extractToolCall(req.body);
+  const args = extractArgs(toolCall, req.body);
+  const toolCallId = getToolCallId(toolCall);
+  const { full_name, phone_number, service_name, appointment_time } = args;
+
   console.log("send_confirmation_sms | to:", phone_number, "| client:", full_name);
 
   if (!full_name || !phone_number) {
-    return res.status(400).json({ error: "full_name and phone_number are required" });
+    return vapiResponse(res, toolCallId, "Missing required fields: full_name, phone_number");
   }
 
-  const smsMessage =
-`Hi ${full_name} ✨
+  const smsMessage = `Hi ${full_name}! You are confirmed for your ${service_name} at Mindflow Spa on ${appointment_time}. Please give us 24 hours notice to reschedule. We look forward to seeing you! - Mindflow Spa`;
 
-You're confirmed for your ${service_name} at Mindflow Spa on ${appointment_time}.
+  console.log("SMS TO:", phone_number, "|", smsMessage);
 
-If you need to reschedule, please give us at least 24 hours notice.
-
-We look forward to seeing you 🌿
-
-— Mindflow Spa`;
-
-  console.log("SMS TO:", phone_number, "\n", smsMessage);
-
-  return res.json({
+  return vapiResponse(res, toolCallId, {
     success: true,
     status: "sent",
     to: phone_number,
