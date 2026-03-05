@@ -6,11 +6,25 @@ app.use(express.json());
 
 function extractArgs(body) {
   try {
+    // Format 1: body.message.toolCallList[0].function.arguments
     const toolCall = body?.message?.toolCallList?.[0];
     if (toolCall) {
       const args = toolCall.function?.arguments;
       return typeof args === "string" ? JSON.parse(args) : args;
     }
+    // Format 2: body.message.toolCalls[0].function.arguments
+    const toolCall2 = body?.message?.toolCalls?.[0];
+    if (toolCall2) {
+      const args = toolCall2.function?.arguments;
+      return typeof args === "string" ? JSON.parse(args) : args;
+    }
+    // Format 3: body.toolCalls[0].function.arguments (top-level)
+    const toolCall3 = body?.toolCalls?.[0];
+    if (toolCall3) {
+      const args = toolCall3.function?.arguments;
+      return typeof args === "string" ? JSON.parse(args) : args;
+    }
+    // Format 4: direct body
     return body;
   } catch (e) {
     return body;
@@ -67,38 +81,28 @@ function formatSlotDisplay(date) {
 // ─── Route 1: check_availability ────────────────────────────────────────────
 
 app.post("/vapi/check-availability", (req, res) => {
-  console.log("\n📅 check_availability called");
-  console.log("Raw body:", JSON.stringify(req.body, null, 2));
-
   const args = extractArgs(req.body);
-  console.log("Extracted args:", JSON.stringify(args, null, 2));
+  const duration_minutes = args?.duration_minutes || args?.durationMinutes || 60;
+  console.log("check_availability | duration:", duration_minutes, "| args:", JSON.stringify(args));
 
-  const { duration_minutes } = args;
-
-  if (!duration_minutes) {
-    return res.status(400).json({ error: "duration_minutes is required" });
-  }
-
-  const slots = generateSlots(duration_minutes);
-  console.log("Returning slots:", slots);
+  const slots = generateSlots(Number(duration_minutes));
 
   return res.json({
     available_slots: slots,
     timezone: "America/New_York",
-    duration_minutes,
+    duration_minutes: Number(duration_minutes),
   });
 });
 
 // ─── Route 2: create_calendar_event ─────────────────────────────────────────
 
 app.post("/vapi/create-calendar-event", (req, res) => {
-  console.log("\n📆 create_calendar_event called");
-  console.log("Raw body:", JSON.stringify(req.body, null, 2));
-
   const args = extractArgs(req.body);
-  const { full_name, phone_number, service_name, duration_minutes, start_time, end_time } = args;
+  const { full_name, phone_number, service_name, duration_minutes, start_time, end_time } = args || {};
+  console.log("create_calendar_event | client:", full_name, "| service:", service_name, "| start:", start_time);
 
   if (!full_name || !service_name || !start_time) {
+    console.log("MISSING required fields. Args:", JSON.stringify(args));
     return res.status(400).json({ error: "full_name, service_name, and start_time are required" });
   }
 
@@ -115,8 +119,7 @@ app.post("/vapi/create-calendar-event", (req, res) => {
     booked_via: "Elina (Voice Assistant)",
   };
 
-  console.log("\n✅ BOOKING CONFIRMED:");
-  console.log(JSON.stringify(booking, null, 2));
+  console.log("BOOKING CONFIRMED:", JSON.stringify(booking));
 
   return res.json({
     success: true,
@@ -129,11 +132,9 @@ app.post("/vapi/create-calendar-event", (req, res) => {
 // ─── Route 3: send_confirmation_sms ─────────────────────────────────────────
 
 app.post("/vapi/send-confirmation-sms", (req, res) => {
-  console.log("\n📲 send_confirmation_sms called");
-  console.log("Raw body:", JSON.stringify(req.body, null, 2));
-
   const args = extractArgs(req.body);
-  const { full_name, phone_number, service_name, appointment_time } = args;
+  const { full_name, phone_number, service_name, appointment_time } = args || {};
+  console.log("send_confirmation_sms | to:", phone_number, "| client:", full_name);
 
   if (!full_name || !phone_number) {
     return res.status(400).json({ error: "full_name and phone_number are required" });
@@ -150,9 +151,7 @@ We look forward to seeing you 🌿
 
 — Mindflow Spa`;
 
-  console.log("\n📱 SMS THAT WOULD BE SENT:");
-  console.log(`To: ${phone_number}`);
-  console.log(`Message:\n${smsMessage}`);
+  console.log("SMS TO:", phone_number, "\n", smsMessage);
 
   return res.json({
     success: true,
@@ -179,5 +178,5 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`\n🌿 Mindflow backend running on port ${PORT}`);
+  console.log(`Mindflow backend running on port ${PORT}`);
 });
