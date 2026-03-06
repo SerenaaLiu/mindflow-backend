@@ -25,11 +25,8 @@ function getToolCallId(toolCall) {
 
 function vapiResponse(res, toolCallId, resultObj) {
   const resultStr = typeof resultObj === "string" ? resultObj : JSON.stringify(resultObj);
-  if (toolCallId) {
-    return res.json({ results: [{ toolCallId, result: resultStr }] });
-  }
-  // Fallback for direct testing without toolCallId
-  return res.json(resultObj);
+  // Always return results array - Vapi requires this regardless of toolCallId
+  return res.json({ results: [{ toolCallId: toolCallId || "", result: resultStr }] });
 }
 
 function generateSlots(durationMinutes) {
@@ -84,7 +81,7 @@ app.post("/vapi/check-availability", (req, res) => {
   const toolCallId = getToolCallId(toolCall);
   const duration_minutes = Number(args?.duration_minutes || args?.durationMinutes || 60);
 
-  console.log("check_availability | duration:", duration_minutes, "| toolCallId:", toolCallId);
+  console.log("check_availability | duration:", duration_minutes, "| toolCallId:", toolCallId, "| bodyKeys:", Object.keys(req.body || {}));
 
   const slots = generateSlots(duration_minutes);
   const result = {
