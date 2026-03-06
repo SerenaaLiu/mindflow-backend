@@ -147,6 +147,15 @@ app.post("/vapi/send-confirmation-sms", (req, res) => {
   });
 });
 
+
+// --- Debug endpoint ---
+
+app.post("/vapi/debug", (req, res) => {
+  console.log("DEBUG FULL BODY:", JSON.stringify(req.body));
+  const toolCallId = req.body?.message?.toolCallList?.[0]?.id || req.body?.message?.toolCalls?.[0]?.id || "test";
+  res.json({ results: [{ toolCallId, result: "debug ok" }] });
+});
+
 // ─── Health check ────────────────────────────────────────────────────────────
 
 app.get("/", (req, res) => {
