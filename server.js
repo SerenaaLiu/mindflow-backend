@@ -159,9 +159,15 @@ app.post("/vapi/send-confirmation-sms", (req, res) => {
 // --- Debug endpoint ---
 
 app.post("/vapi/debug", (req, res) => {
-  console.log("DEBUG FULL BODY:", JSON.stringify(req.body));
   const toolCallId = req.body?.message?.toolCallList?.[0]?.id || req.body?.message?.toolCalls?.[0]?.id || "test";
-  res.json({ results: [{ toolCallId, result: "debug ok" }] });
+  const slots = generateSlots(60);
+  const result = {
+    available_slots: slots,
+    timezone: "America/New_York",
+    duration_minutes: 60
+  };
+  console.log("debug | toolCallId:", toolCallId, "| slots:", slots.length);
+  res.json({ results: [{ toolCallId, result: JSON.stringify(result) }] });
 });
 
 // ─── Health check ────────────────────────────────────────────────────────────
