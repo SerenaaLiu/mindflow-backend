@@ -1,6 +1,13 @@
 const express = require("express");
 const app = express();
-app.use(express.json());
+app.use((req, res, next) => {
+  express.json()(req, res, (err) => {
+    if (err) {
+      console.log('JSON parse error:', err.message, '| raw:', req.body);
+    }
+    next();
+  });
+});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -19,8 +26,12 @@ function extractArgs(toolCall, body) {
   return body || {};
 }
 
-function getToolCallId(toolCall) {
-  return toolCall?.id || toolCall?.toolCallId || null;
+function getToolCallId(body) {
+  // Use same extraction as debug endpoint which worked
+  return body?.message?.toolCallList?.[0]?.id 
+    || body?.message?.toolCalls?.[0]?.id
+    || body?.toolCalls?.[0]?.id
+    || "";
 }
 
 function vapiResponse(res, toolCallId, resultObj) {
@@ -78,7 +89,7 @@ function formatSlotDisplay(date) {
 app.post("/vapi/check-availability", (req, res) => {
   const toolCall = extractToolCall(req.body);
   const args = extractArgs(toolCall, req.body);
-  const toolCallId = getToolCallId(toolCall);
+  const toolCallId = getToolCallId(req.body);
   const duration_minutes = Number(args?.duration_minutes || args?.durationMinutes || 60);
 
   console.log("check_availability | duration:", duration_minutes, "| toolCallId:", toolCallId, "| bodyKeys:", Object.keys(req.body || {}));
@@ -98,7 +109,7 @@ app.post("/vapi/check-availability", (req, res) => {
 app.post("/vapi/create-calendar-event", (req, res) => {
   const toolCall = extractToolCall(req.body);
   const args = extractArgs(toolCall, req.body);
-  const toolCallId = getToolCallId(toolCall);
+  const toolCallId = getToolCallId(req.body);
   const { full_name, phone_number, service_name, duration_minutes, start_time, end_time } = args;
 
   console.log("create_calendar_event | client:", full_name, "| service:", service_name, "| start:", start_time);
@@ -123,7 +134,7 @@ app.post("/vapi/create-calendar-event", (req, res) => {
 app.post("/vapi/send-confirmation-sms", (req, res) => {
   const toolCall = extractToolCall(req.body);
   const args = extractArgs(toolCall, req.body);
-  const toolCallId = getToolCallId(toolCall);
+  const toolCallId = getToolCallId(req.body);
   const { full_name, phone_number, service_name, appointment_time } = args;
 
   console.log("send_confirmation_sms | to:", phone_number, "| client:", full_name);
